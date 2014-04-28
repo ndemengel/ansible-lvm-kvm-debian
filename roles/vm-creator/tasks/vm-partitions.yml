@@ -1,0 +1,34 @@
+---
+## / config
+
+- name: create vm root logical volume
+  lvol: lv={{ vm_name }} vg={{ vm_volume_group }} size={{ vm_root_volume_size }} state=present
+
+- name: create vm filesystem
+  filesystem: fstype=ext4 dev=/dev/{{ vm_volume_group }}/{{ vm_name }}
+
+- name: find vm root device UUID
+  command: blkid -o value -s UUID /dev/{{ vm_volume_group }}/{{ vm_name }}
+  register: root_device_uuid_discovery
+
+- name: register vm root device UUID
+  set_fact: vm_root_device_uuid={{ root_device_uuid_discovery.stdout }}
+
+
+## swap config
+
+- name: create vm swap logical volume
+  lvol: lv={{ vm_name }}-swap vg={{ vm_volume_group }} size={{ vm_swap_volume_size }} state=present
+  register: swap_volume_creation
+
+- name: create vm swap
+  command: /sbin/mkswap /dev/{{ vm_volume_group }}/{{ vm_name }}-swap
+  when: swap_volume_creation.changed
+
+- name: find vm swap device UUID
+  command: blkid -o value -s UUID /dev/{{ vm_volume_group }}/{{ vm_name }}-swap
+  register: swap_device_uuid_discovery
+
+- name: register vm swap device UUID
+  set_fact: vm_swap_device_uuid={{ swap_device_uuid_discovery.stdout }}
+

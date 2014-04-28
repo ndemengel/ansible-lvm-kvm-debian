@@ -1,0 +1,123 @@
+---
+- name: mount vm filesystem
+  mount: name=/mnt/vm-{{ vm_name }} src=/dev/{{ vm_volume_group }}/{{ vm_name }} fstype=ext4 state=mounted
+  tags: mount
+
+- name: copy vm system files
+  shell: cp -rp /srv/vm/images/wheezy/* /mnt/vm-{{ vm_name }}/ creates=/mnt/vm-{{ vm_name }}/var
+  register: system_files_setup
+
+- name: copy some more files into vm (locale, users, groups)
+  command: cp -p {{ item }} /mnt/vm-{{ vm_name }}/{{ item }}
+  with_items:
+    - /etc/apt/sources.list
+    - /etc/default/keyboard
+    - /etc/default/locale
+    - /etc/locale.gen
+    - /etc/resolv.conf
+    - /etc/timezone
+  when: system_files_setup.changed
+
+- name: create vm /etc/fstab
+  template: src=vm-fstab.j2 dest=/mnt/vm-{{ vm_name }}/etc/fstab
+  when: system_files_setup.changed
+
+- name: create vm /etc/network/intefaces
+  template: src=vm-interfaces.j2 dest=/mnt/vm-{{ vm_name }}/etc/network/interfaces
+  when: system_files_setup.changed
+
+- name: specify vm hostname
+  shell: echo "{{ vm_name }}" > /mnt/vm-{{ vm_name }}/etc/hostname
+  when: system_files_setup.changed
+
+- name: create vm /etc/hosts
+  template: src=vm-hosts.j2 dest=/mnt/vm-{{ vm_name }}/etc/hosts
+  when: system_files_setup.changed
+
+- name: activate vm ttyS0
+  lineinfile: dest=/mnt/vm-{{ vm_name }}/etc/inittab regexp=ttyS0 line='T0:23:respawn:/sbin/getty -L ttyS0 9600 vt100'
+
+- name: create home for current user on vm
+  file:
+    path=/mnt/vm-{{ vm_name }}/home/{{ ansible_ssh_user }}
+    state=directory
+    owner={{ ansible_ssh_user }} group={{ ansible_ssh_user }}
+  when: ansible_ssh_user != 'root'
+
+- name: copy current user to vm
+  shell: grep ^{{ ansible_ssh_user }} /etc/passwd >> /mnt/vm-{{ vm_name }}/etc/passwd
+  when: ansible_ssh_user != 'root' and system_files_setup.changed
+
+- name: copy current user group to vm
+  shell: grep ^{{ ansible_ssh_user }} /etc/group >> /mnt/vm-{{ vm_name }}/etc/group
+  when: ansible_ssh_user != 'root' and system_files_setup.changed
+
+- name: temporarly share (mount) /dev /proc and /tmp with vm
+  mount: name={{ item.name }} src={{ item.src }} fstype=none opts={{ item.opts }} state=mounted
+  with_items:
+    - { src: /tmp, name: '/mnt/vm-{{ vm_name }}/tmp', opts: bind }
+    - { src: /proc, name: '/mnt/vm-{{ vm_name }}/proc', opts: bind }
+    - { src: /dev, name: '/mnt/vm-{{ vm_name }}/dev', opts: rbind }
+  tags: mount
+
+- name: specify current user password for new vm
+  shell: echo "{{ lookup('template', '../templates/vm-user-password-inputs.j2') }}" | passwd {{ ansible_ssh_user }} -R /mnt/vm-{{ vm_name }}
+  when: system_files_setup.changed
+
+- name: create /root/.ssh on new vm
+  file: path=/mnt/vm-{{ vm_name }}/root/.ssh state=directory
+  when: system_files_setup.changed
+
+- name: copy orchestrating server's public key to vm authorized key
+  copy: src=~/.ssh/id_rsa.pub dest=/mnt/vm-{{ vm_name }}/root/.ssh/authorized_keys
+  when: system_files_setup.changed
+
+- name: build vm locales
+  command: chroot /mnt/vm-{{ vm_name }} locale-gen
+  when: system_files_setup.changed
+
+- name: temporarly mount /dev sub-mount points (required by next task)
+  command: mount --rbind /dev /mnt/vm-{{ vm_name }}/dev
+  when: system_files_setup.changed
+  tags: mount
+
+- name: add current user to vm sudo group
+  command: chroot /mnt/vm-{{ vm_name }} adduser {{ ansible_ssh_user }} sudo
+  when: system_files_setup.changed
+
+- name: configure vm hardware clock
+  command: chroot /mnt/vm-{{ vm_name }} hwclock --systohc --utc
+  when: system_files_setup.changed
+
+- name: unmount /dev
+  command: umount -l /mnt/vm-{{ vm_name }}/dev
+  when: system_files_setup.changed
+  tags: unmount
+
+# attempt to force unmount of /mnt/vm-{{ vm_name }}/dev as it sometime fails in next step
+- name: unmount /dev
+  command: umount -l /mnt/vm-{{ vm_name }}/dev
+  ignore_errors: yes
+  tags: unmount
+
+- name: unmout temporarly shared folders
+  mount: name={{ item.name }} src={{ item.src }} fstype=none opts={{ item.opts }} state=unmounted
+  with_items:
+    - { src: /dev, name: '/mnt/vm-{{ vm_name }}/dev', opts: rbind }
+    - { src: /proc, name: '/mnt/vm-{{ vm_name }}/proc', opts: bind }
+    - { src: /tmp, name: '/mnt/vm-{{ vm_name }}/tmp', opts: bind }
+  tags: unmount
+
+- name: unmount vm filesystem
+  mount: name=/mnt/vm-{{ vm_name }} src=/dev/{{ vm_volume_group }}/{{ vm_name }} fstype=ext4 state=unmounted
+  tags: unmount
+
+- name: remove mount points for temporly shared folders
+  mount: name={{ item.name }} src={{ item.src }} fstype={{ item.fstype }} opts={{ item.opts }} state=absent
+  with_items:
+    - { src: /dev, name: '/mnt/vm-{{ vm_name }}/dev', fstype: none, opts: rbind }
+    - { src: /proc, name: '/mnt/vm-{{ vm_name }}/proc', fstype: none, opts: bind }
+    - { src: /tmp, name: '/mnt/vm-{{ vm_name }}/tmp', fstype: none, opts: bind }
+    - { src: '/dev/{{ vm_volume_group }}/{{ vm_name }}', name: '/mnt/vm-{{ vm_name }}', fstype: ext4, opts: '' }
+  tags: unmount
+

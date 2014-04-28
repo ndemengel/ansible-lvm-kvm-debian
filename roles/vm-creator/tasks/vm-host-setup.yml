@@ -1,0 +1,31 @@
+---
+- name: install latest version of required packets
+  apt: pkg={{ item }} state=latest
+  with_items:
+    - debootstrap
+    - initramfs-tools
+    - libvirt-bin
+    - lvm2
+    - python-libvirt
+    - qemu-kvm
+
+- name: add virtio drivers to initramfs modules
+  lineinfile: dest=/etc/initramfs-tools/modules regexp={{ item }} line={{ item }}
+  with_items:
+    - virtio
+    - virtio_blk
+    - virtio_net
+    - virtio_pci
+    - virtio_ring
+  register: virtio_driver_addition
+
+- name: update initramfs
+  command: update-initramfs -k all -u
+  when: virtio_driver_addition.changed
+
+- name: os preparation - deboostrap
+  command: /usr/sbin/debootstrap --arch=amd64
+               --include=bzip2,curl,locales,ntpdate,openssh-server,python,python-apt,python-pycurl,sudo,vim
+               wheezy /srv/vm/images/wheezy http://{{ apt_host }}/debian
+           creates=/srv/vm/images/wheezy
+

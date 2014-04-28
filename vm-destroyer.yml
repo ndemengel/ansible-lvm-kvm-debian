@@ -1,0 +1,23 @@
+---
+- hosts: vm-host
+
+  tasks:
+    - name: destroy vm
+      virt: command=destroy name={{ vm_name }} uri=qemu:///system
+      # virt module crashes when Vm does not exist :-(
+      ignore_errors: yes
+
+    - name: undefine vm
+      virt: command=undefine name={{ vm_name }} uri=qemu:///system
+      # virt module crashes when Vm does not exist :-(
+      ignore_errors: yes
+
+    - name: remove vm root logical volume
+      lvol: vg=domains lv={{ vm_name }} state=absent force=yes
+
+    - name: remove vm swap logical volume
+      lvol: vg=domains lv={{ vm_name }}-swap state=absent force=yes
+
+  vars:
+    - vm_name: my-vm
+

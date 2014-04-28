@@ -1,0 +1,25 @@
+---
+## VM creation (uses kernel and initrd from host's /boot)
+
+- name: find kernel file name
+  shell: ls -1t /boot/vmlinuz-* | head -n1
+  register: kernel_filename_discovery
+
+- name: register kernel file name
+  set_fact: vm_kernel_filename={{ kernel_filename_discovery.stdout }}
+
+- name: find initrd file name
+  shell: ls -1t /boot/initrd.img* | head -n1
+  register: initrd_filename_discovery
+
+- name: register initrd file name
+  set_fact: vm_initrd_filename={{ initrd_filename_discovery.stdout }}
+
+- name: define vm
+  virt: command=define name={{ vm_name }} xml="{{ lookup('template', '../templates/vm-libvirt-domain.xml.j2') }}" uri=qemu:///system
+
+- name: autostart vm
+  virt: command=autostart name={{ vm_name }} uri=qemu:///system
+
+- name: start vm
+  virt: state=running name={{ vm_name }} uri=qemu:///system

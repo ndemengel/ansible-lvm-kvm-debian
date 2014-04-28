@@ -1,0 +1,8 @@
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+  address {{ hostvars[vm_name]['ansible_ssh_host'] }}
+  gateway {{ hostvars[vm_name]['vm_net_gateway'] }}
+  netmask {{ hostvars[vm_name]['vm_net_netmask'] }}
