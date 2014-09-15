@@ -3,17 +3,17 @@
   roles:
     - {
         role: vm-creator,
-        apt_host: http.debian.net
+        apt_host: http.debian.net,
         # my-vm must have an entry in the inventory (see hosts file)
         # some of its variables can be defined in the inventory too
         vm_name: my-vm,
-        vm_domain: example.org
+        vm_domain: example.org,
         vm_volume_group: defaultvg,
         vm_root_volume_size: 10G,
         vm_swap_volume_size: 1G,
         vm_memory: 1024,
         vm_cpu: 4,
-        vm_bridge: br0
+        vm_bridge: br0  # could be defined in hosts file, so that it depends on 'vm-host'
     }
   vars_prompt:
     - name: vm_user_password
